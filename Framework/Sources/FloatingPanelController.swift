@@ -220,6 +220,12 @@ open class FloatingPanelController: UIViewController {
         setUp()
     }
 
+    public init(isIncludeMiddleView:Bool) {
+        super.init(nibName: nil, bundle: nil)
+        self.includeMiddleView = isIncludeMiddleView
+        setUp()
+    }
+    
     private func setUp() {
         _ = FloatingPanelController.dismissSwizzling
 
@@ -517,7 +523,6 @@ open class FloatingPanelController: UIViewController {
             vc.didMove(toParentViewController: self)
             #endif
         }
-        includeMiddleView = false
         _contentViewController = contentViewController
     }
 
@@ -570,9 +575,10 @@ open class FloatingPanelController: UIViewController {
                 #else
                 middleVC.didMove(toParentViewController: self)
                 #endif
+                includeMiddleView = true
             }
         }
-
+        
         _contentViewController = contentViewController
     }
     
