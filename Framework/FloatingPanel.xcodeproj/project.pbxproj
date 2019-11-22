@@ -28,6 +28,7 @@
 		54CFBFC3215CD045006B5735 /* FloatingPanelLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CFBFC2215CD045006B5735 /* FloatingPanelLayout.swift */; };
 		54CFBFC5215CD09C006B5735 /* FloatingPanelCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CFBFC4215CD09C006B5735 /* FloatingPanelCore.swift */; };
 		54E740CD218AFD67005C1A34 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54E740CC218AFD67005C1A34 /* AppDelegate.swift */; };
+		584A5DE12386BC36002EC4D8 /* FloatingPanelMiddleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 584A5DE02386BC36002EC4D8 /* FloatingPanelMiddleView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +75,7 @@
 		54E740CA218AFD67005C1A34 /* FloatingPanelTesting.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FloatingPanelTesting.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		54E740CC218AFD67005C1A34 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		54E740D8218AFD6A005C1A34 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		584A5DE02386BC36002EC4D8 /* FloatingPanelMiddleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPanelMiddleView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -134,6 +136,7 @@
 				5450EEE321646DF500135936 /* FloatingPanelBehavior.swift */,
 				54352E9721A521CA00CBCA08 /* FloatingPanelView.swift */,
 				54CDC5D2215B6D5A007D205C /* FloatingPanelSurfaceView.swift */,
+				584A5DE02386BC36002EC4D8 /* FloatingPanelMiddleView.swift */,
 				54CDC5D4215B6D8D007D205C /* FloatingPanelBackdropView.swift */,
 				545DBA2A2152383100CA77B8 /* GrabberHandleView.swift */,
 				545DB9DD215118C800CA77B8 /* UIExtensions.swift */,
@@ -313,6 +316,7 @@
 				54352E9821A521CA00CBCA08 /* FloatingPanelView.swift in Sources */,
 				54CFBFC5215CD09C006B5735 /* FloatingPanelCore.swift in Sources */,
 				54ABD7AF216CCFF7002E6C13 /* Logger.swift in Sources */,
+				584A5DE12386BC36002EC4D8 /* FloatingPanelMiddleView.swift in Sources */,
 				545DB9E021511AC100CA77B8 /* FloatingPanelController.swift in Sources */,
 				5450EEE421646DF500135936 /* FloatingPanelBehavior.swift in Sources */,
 				545DBA2B2152383100CA77B8 /* GrabberHandleView.swift in Sources */,
