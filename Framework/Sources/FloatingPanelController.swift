@@ -19,7 +19,7 @@ public protocol FloatingPanelControllerDelegate: class {
     /// Asks the delegate if dragging should begin by the pan gesture recognizer.
     func floatingPanelShouldBeginDragging(_ vc: FloatingPanelController) -> Bool
 
-    func floatingPanelDidMove(_ vc: FloatingPanelController) // any surface frame changes in dragging
+    func floatingPanelDidMove(_ vc: FloatingPanelController,movingPosition: FloatingPanelPosition?) // any surface frame changes in dragging
 
     // called on start of dragging (may require some time and or distance to move)
     func floatingPanelWillBeginDragging(_ vc: FloatingPanelController)
@@ -50,7 +50,7 @@ public extension FloatingPanelControllerDelegate {
     func floatingPanelShouldBeginDragging(_ vc: FloatingPanelController) -> Bool {
         return true
     }
-    func floatingPanelDidMove(_ vc: FloatingPanelController) {}
+    func floatingPanelDidMove(_ vc: FloatingPanelController,movingPosition: FloatingPanelPosition?) {}
     func floatingPanelWillBeginDragging(_ vc: FloatingPanelController) {}
     func floatingPanelDidEndDragging(_ vc: FloatingPanelController, withVelocity velocity: CGPoint, targetPosition: FloatingPanelPosition) {}
     func floatingPanelWillBeginDecelerating(_ vc: FloatingPanelController) {}
@@ -141,6 +141,11 @@ open class FloatingPanelController: UIViewController {
         return floatingPanel.backdropView
     }
 
+    /// Returns the backdrop view managed by the controller object.
+    public var middleView: FloatingPanelMiddleView? {
+        return floatingPanel.middleView
+    }
+    
     /// Returns the scroll view that the controller tracks.
     public weak var scrollView: UIScrollView? {
         return floatingPanel.scrollView
@@ -194,7 +199,8 @@ open class FloatingPanelController: UIViewController {
             activateLayout()
         }
     }
-
+    public var includeMiddleView: Bool = false
+    
     private var _contentViewController: UIViewController?
 
     private(set) var floatingPanel: FloatingPanelCore!
@@ -241,10 +247,15 @@ open class FloatingPanelController: UIViewController {
 
         backdropView.frame = view.bounds
         view.addSubview(backdropView)
-
+        
+        if let mView = middleView, includeMiddleView {
+            mView.frame = view.bounds
+            view.addSubview(mView)
+        }
+        
         surfaceView.frame = view.bounds
         view.addSubview(surfaceView)
-
+        
         self.view = view as UIView
     }
 
@@ -425,9 +436,9 @@ open class FloatingPanelController: UIViewController {
         show(animated: animated) { [weak self] in
             guard let `self` = self else { return }
             #if swift(>=4.2)
-            self.didMove(toParent: parent)
+            self.didMove(toParent: self)
             #else
-            self.didMove(toParentViewController: parent)
+            self.didMove(toParentViewController: self)
             #endif
         }
     }
@@ -506,10 +517,65 @@ open class FloatingPanelController: UIViewController {
             vc.didMove(toParentViewController: self)
             #endif
         }
-
+        includeMiddleView = false
         _contentViewController = contentViewController
     }
 
+    public func set(contentViewController: UIViewController?,middleContentViewController: UIViewController?) {
+        if let vc = _contentViewController {
+            #if swift(>=4.2)
+            vc.willMove(toParent: nil)
+            #else
+            vc.willMove(toParentViewController: nil)
+            #endif
+
+            vc.view.removeFromSuperview()
+
+            #if swift(>=4.2)
+            vc.removeFromParent()
+            #else
+            vc.removeFromParentViewController()
+            #endif
+        }
+
+        if let vc = contentViewController {
+            #if swift(>=4.2)
+            addChild(vc)
+            #else
+            addChildViewController(vc)
+            #endif
+            
+            let surfaceView = floatingPanel.surfaceView
+            surfaceView.add(contentView: vc.view)
+
+            #if swift(>=4.2)
+            vc.didMove(toParent: self)
+            #else
+            vc.didMove(toParentViewController: self)
+            #endif
+            
+            if let middleVC = middleContentViewController {
+                #if swift(>=4.2)
+                    addChild(middleVC)
+                #else
+                    addChildViewController(middleVC)
+                #endif
+                
+                if let middleView = floatingPanel.middleView{
+                    middleView.add(contentView: middleVC.view)
+                }
+                
+                #if swift(>=4.2)
+                middleVC.didMove(toParent: self)
+                #else
+                middleVC.didMove(toParentViewController: self)
+                #endif
+            }
+        }
+
+        _contentViewController = contentViewController
+    }
+    
     @available(*, unavailable, renamed: "set(contentViewController:)")
     open  override func show(_ vc: UIViewController, sender: Any?) {
         if let target = self.parent?.targetViewController(forAction: #selector(UIViewController.show(_:sender:)), sender: sender) {

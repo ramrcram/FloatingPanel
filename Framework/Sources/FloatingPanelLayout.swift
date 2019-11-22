@@ -166,7 +166,8 @@ class FloatingPanelLayoutAdapter {
     weak var vc: FloatingPanelController!
     private weak var surfaceView: FloatingPanelSurfaceView!
     private weak var backdropView: FloatingPanelBackdropView!
-
+    private weak var middleView: FloatingPanelMiddleView?
+    
     var layout: FloatingPanelLayout {
         didSet {
             checkLayoutConsistance()
@@ -184,12 +185,16 @@ class FloatingPanelLayoutAdapter {
     private var halfConstraints: [NSLayoutConstraint] = []
     private var tipConstraints: [NSLayoutConstraint] = []
     private var offConstraints: [NSLayoutConstraint] = []
+    private var middleConstraints: [NSLayoutConstraint] = []
     private var interactiveTopConstraint: NSLayoutConstraint?
+    private var interactiveMiddleTopConstraint: NSLayoutConstraint?
     private var bottomConstraint: NSLayoutConstraint?
+    private var middleBottomConstraint: NSLayoutConstraint?
 
 
     private var heightConstraint: NSLayoutConstraint?
-
+    private var middleHeightConstraint: NSLayoutConstraint?
+    
     private var fullInset: CGFloat {
         if layout is FloatingPanelIntrinsicLayout {
             return intrinsicHeight
@@ -275,12 +280,16 @@ class FloatingPanelLayoutAdapter {
 
     var intrinsicHeight: CGFloat = 0.0
 
-    init(surfaceView: FloatingPanelSurfaceView, backdropView: FloatingPanelBackdropView, layout: FloatingPanelLayout) {
+    init(surfaceView: FloatingPanelSurfaceView, middleView: FloatingPanelMiddleView? = nil, backdropView: FloatingPanelBackdropView, layout: FloatingPanelLayout) {
         self.layout = layout
         self.surfaceView = surfaceView
         self.backdropView = backdropView
+        self.middleView = middleView
     }
-
+    convenience init(surfaceView: FloatingPanelSurfaceView, backdropView: FloatingPanelBackdropView, layout: FloatingPanelLayout) {
+        self.init(surfaceView:surfaceView, middleView:nil, backdropView:backdropView, layout:layout)
+    }
+    
     func updateIntrinsicHeight() {
         #if swift(>=4.2)
         let fittingSize = UIView.layoutFittingCompressedSize
@@ -314,7 +323,7 @@ class FloatingPanelLayoutAdapter {
 
         surfaceView.translatesAutoresizingMaskIntoConstraints = false
         backdropView.translatesAutoresizingMaskIntoConstraints = false
-
+        
         // Fixed constraints of surface and backdrop views
         let surfaceConstraints = layout.prepareLayout(surfaceView: surfaceView, in: vc.view!)
         let backdropConstraints = [
@@ -372,8 +381,38 @@ class FloatingPanelLayoutAdapter {
             surfaceView.topAnchor.constraint(equalTo:vc.view.bottomAnchor,
                                              constant: -hiddenInset),
         ]
+        prepareMiddleLayout()
     }
-
+    
+    func prepareMiddleLayout() {
+        guard let mView = middleView else { return}
+        
+        NSLayoutConstraint.deactivate(constraint: self.middleHeightConstraint)
+        self.middleHeightConstraint = nil
+        NSLayoutConstraint.deactivate(constraint: self.middleBottomConstraint)
+        self.middleBottomConstraint = nil
+        
+        mView.translatesAutoresizingMaskIntoConstraints = false
+        
+        let midFixedConstraints = layout.prepareLayout(surfaceView: mView, in: surfaceView)
+        fixedConstraints = fixedConstraints + midFixedConstraints
+        
+        let bottomAnchor: NSLayoutYAxisAnchor = {
+            if layout.positionReference == .fromSuperview {
+                return vc.view.bottomAnchor
+            } else {
+                return vc.layoutGuide.bottomAnchor
+            }
+        }()
+        
+        if vc.contentMode == .fitToBounds {
+            middleBottomConstraint = mView.bottomAnchor.constraint(equalTo: surfaceView.bottomAnchor,constant: 0.0)
+        }
+        middleConstraints = [
+            mView.topAnchor.constraint(equalTo:bottomAnchor, constant:-tipInset)
+        ]
+    }
+    
     func startInteraction(at state: FloatingPanelPosition, offset: CGPoint = .zero) {
         guard self.interactiveTopConstraint == nil else { return }
         NSLayoutConstraint.deactivate(fullConstraints + halfConstraints + tipConstraints + offConstraints)
@@ -391,6 +430,25 @@ class FloatingPanelLayoutAdapter {
         }
         NSLayoutConstraint.activate([interactiveTopConstraint])
         self.interactiveTopConstraint = interactiveTopConstraint
+        self.startMiddleInteraction(offset: offset)
+    }
+    
+    func startMiddleInteraction(offset: CGPoint = .zero) {
+        guard let mView = self.middleView, self.interactiveMiddleTopConstraint == nil else { return }
+        NSLayoutConstraint.deactivate(middleConstraints)
+
+        let interactiveMiddleTopConstraint: NSLayoutConstraint
+        switch layout.positionReference {
+        case .fromSafeArea:
+            initialConst = surfaceView.frame.origin.y - safeAreaInsets.top + offset.y
+            interactiveMiddleTopConstraint = mView.topAnchor.constraint(equalTo: vc.layoutGuide.topAnchor,
+                                                                        constant: initialConst)
+        case .fromSuperview:
+            interactiveMiddleTopConstraint = mView.topAnchor.constraint(equalTo: vc.view.topAnchor,
+                                                                        constant: 0)
+        }
+        NSLayoutConstraint.activate([interactiveMiddleTopConstraint])
+        self.interactiveMiddleTopConstraint = interactiveMiddleTopConstraint
     }
 
     func endInteraction(at state: FloatingPanelPosition) {
@@ -438,13 +496,41 @@ class FloatingPanelLayoutAdapter {
         NSLayoutConstraint.activate(constraint: heightConstraint)
 
         surfaceView.bottomOverflow = vc.view.bounds.height + layout.topInteractionBuffer
+        self.updateMiddleHeight()
     }
+    
+    func updateMiddleHeight() {
+        guard let vc = vc , let mView = middleView else{ return }
+        NSLayoutConstraint.deactivate(constraint: middleHeightConstraint)
+        middleHeightConstraint = nil
 
-    func updateInteractiveTopConstraint(diff: CGFloat, allowsTopBuffer: Bool, with behavior: FloatingPanelBehavior) {
+        guard vc.contentMode != .fitToBounds else { return }
+
+        switch layout {
+        case is FloatingPanelIntrinsicLayout:
+            middleHeightConstraint = mView.heightAnchor.constraint(equalToConstant: intrinsicHeight + safeAreaInsets.bottom)
+        default:
+//            let const = -(positionY(for: topMostState))
+            middleHeightConstraint =  mView.heightAnchor.constraint(equalTo: surfaceView.heightAnchor ,constant: 0)
+        }
+        NSLayoutConstraint.activate(constraint: middleHeightConstraint)
+
+        mView.bottomOverflow = vc.view.bounds.height + layout.topInteractionBuffer
+    }
+    
+    func updateInteractiveTopConstraint(diff: CGFloat, allowsTopBuffer: Bool,
+                                        with behavior: FloatingPanelBehavior, interactive:UIView? = nil ) {
         defer {
             layoutSurfaceIfNeeded() // MUST be called to update `surfaceView.frame`
+            layoutMiddleIfNeeded()
         }
-
+        var isSurfaceView = true
+        var interactiveView:UIView = surfaceView
+        if let inView = interactive{
+            interactiveView = inView
+            isSurfaceView = false
+        }
+        
         let topMostConst: CGFloat = {
             var ret: CGFloat = 0.0
             switch layout.positionReference {
@@ -464,7 +550,7 @@ class FloatingPanelLayoutAdapter {
             case .fromSuperview:
                 ret = _bottomY
             }
-            return min(ret, surfaceView.superview!.bounds.height)
+            return min(ret, interactiveView.superview!.bounds.height)
         }()
         let minConst = allowsTopBuffer ? topMostConst - layout.topInteractionBuffer : topMostConst
         let maxConst = bottomMostConst + layout.bottomInteractionBuffer
@@ -482,8 +568,13 @@ class FloatingPanelLayoutAdapter {
             let buffer = const - bottomMostConst
             const = bottomMostConst + rubberbandEffect(for: buffer, base: vc.view.bounds.height)
         }
-
-        interactiveTopConstraint?.constant = max(minConst, min(maxConst, const))
+        if(isSurfaceView){
+            interactiveTopConstraint?.constant = max(minConst, min(maxConst, const))
+            interactiveMiddleTopConstraint?.constant = max((max(minConst, min(maxConst, const)) + diff), -topY)
+        }else{
+            interactiveTopConstraint?.constant = max(minConst, min(maxConst, const))
+            interactiveMiddleTopConstraint?.constant =  max((max(minConst, min(maxConst, const)) + diff), -topY)
+        }
     }
 
     // According to @chpwn's tweet: https://twitter.com/chpwn/status/285540192096497664
@@ -503,6 +594,7 @@ class FloatingPanelLayoutAdapter {
 
         if vc.contentMode == .fitToBounds {
             NSLayoutConstraint.activate(constraint: self.bottomConstraint)
+            NSLayoutConstraint.activate(constraint: self.middleBottomConstraint)
         }
     }
 
@@ -531,8 +623,24 @@ class FloatingPanelLayoutAdapter {
         case .hidden:
             NSLayoutConstraint.activate(offConstraints)
         }
+        self.activateMiddleInteractiveLayout(of: state)
     }
-
+    
+    func activateMiddleInteractiveLayout(of state: FloatingPanelPosition) {
+        defer {
+            layoutMiddleIfNeeded()
+        }
+        NSLayoutConstraint.deactivate(middleConstraints)
+        switch state {
+        case .hidden,
+             .tip,
+             .half:
+            NSLayoutConstraint.activate(middleConstraints)
+        default:
+            break
+        }
+    }
+    
     func activateLayout(of state: FloatingPanelPosition) {
         activateFixedLayout()
         activateInteractiveLayout(of: state)
@@ -549,6 +657,13 @@ class FloatingPanelLayoutAdapter {
         surfaceView.superview?.layoutIfNeeded()
     }
 
+    private func layoutMiddleIfNeeded() {
+        #if !TEST
+        guard middleView?.window != nil else { return }
+        #endif
+        middleView?.superview?.layoutIfNeeded()
+    }
+    
     private func setBackdropAlpha(of target: FloatingPanelPosition) {
         if target == .hidden {
             self.backdropView.alpha = 0.0

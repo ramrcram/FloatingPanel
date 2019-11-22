@@ -16,7 +16,8 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
     let backdropView: FloatingPanelBackdropView
     var layoutAdapter: FloatingPanelLayoutAdapter
     var behavior: FloatingPanelBehavior
-
+    var middleView: FloatingPanelMiddleView? = nil
+    
     weak var scrollView: UIScrollView? {
         didSet {
             oldValue?.panGestureRecognizer.removeTarget(self, action: nil)
@@ -38,6 +39,7 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
     }
 
     let panGestureRecognizer: FloatingPanelPanGestureRecognizer
+    let mindPanGestureRecognizer: FloatingPanelPanGestureRecognizer
     var isRemovalInteractionEnabled: Bool = false
 
     fileprivate var animator: UIViewPropertyAnimator?
@@ -59,27 +61,32 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
 
     init(_ vc: FloatingPanelController, layout: FloatingPanelLayout, behavior: FloatingPanelBehavior) {
         viewcontroller = vc
-
+        
         surfaceView = FloatingPanelSurfaceView()
         surfaceView.backgroundColor = .white
-
+        
         backdropView = FloatingPanelBackdropView()
         backdropView.backgroundColor = .black
         backdropView.alpha = 0.0
-
-        self.layoutAdapter = FloatingPanelLayoutAdapter(surfaceView: surfaceView,
-                                                        backdropView: backdropView,
-                                                        layout: layout)
+        
+        if vc.includeMiddleView {
+            middleView = FloatingPanelMiddleView()
+            middleView?.backgroundColor = .white
+        }
+        
+        self.layoutAdapter = FloatingPanelLayoutAdapter(surfaceView: surfaceView,middleView: nil, backdropView: backdropView,layout: layout)
+        
         self.behavior = behavior
-
         panGestureRecognizer = FloatingPanelPanGestureRecognizer()
-
+        mindPanGestureRecognizer = FloatingPanelPanGestureRecognizer()
+        
         if #available(iOS 11.0, *) {
             panGestureRecognizer.name = "FloatingPanelSurface"
+            panGestureRecognizer.name = "FloatingPanelMiddleSurface"
         }
-
+        
         super.init()
-
+        
         panGestureRecognizer.floatingPanel = self
         surfaceView.addGestureRecognizer(panGestureRecognizer)
         panGestureRecognizer.addTarget(self, action: #selector(handle(panGesture:)))
@@ -90,8 +97,15 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
         tapGesture.isEnabled = false
         backdropView.dismissalTapGestureRecognizer = tapGesture
         backdropView.addGestureRecognizer(tapGesture)
+        
+        mindPanGestureRecognizer.floatingPanel = self
+        middleView?.addGestureRecognizer(mindPanGestureRecognizer)
+        mindPanGestureRecognizer.addTarget(self, action: #selector(handle(panGesture:)))
+        mindPanGestureRecognizer.delegate = self
+        
+        
     }
-
+    
     func move(to: FloatingPanelPosition, animated: Bool, completion: (() -> Void)? = nil) {
         move(from: state, to: to, animated: animated, completion: completion)
     }
@@ -398,7 +412,7 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
                 if interactionInProgress == false {
                     startInteraction(with: translation, at: location)
                 }
-                panningChange(with: translation)
+                panningChange(with: translation,velocity: velocity)
             case .ended, .cancelled, .failed:
                 if interactionInProgress == false {
                     startInteraction(with: translation, at: location)
@@ -413,6 +427,66 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
             default:
                 break
             }
+        case mindPanGestureRecognizer :
+        
+            let translation = panGesture.translation(in: mindPanGestureRecognizer.view!.superview)
+            let location = panGesture.location(in: panGesture.view)
+
+            log.debug("panel gesture(\(state):\(panGesture.state)) --",
+                "translation =  \(translation.y), location = \(location.y), velocity = \(velocity.y)")
+
+            if interactionInProgress == false, isDecelerating == false,
+                let vc = viewcontroller, vc.delegate?.floatingPanelShouldBeginDragging(vc) == false {
+                return
+            }
+
+            if let animator = self.animator {
+                guard let mView = middleView, mView.presentationFrame.minY >= layoutAdapter.topMaxY else { return }
+                log.debug("panel animation(interruptible: \(animator.isInterruptible)) interrupted!!!")
+                if animator.isInterruptible {
+                    animator.stopAnimation(false)
+                    // A user can stop a panel at the nearest Y of a target position so this fine-tunes
+                    // the a small gap between the presentation layer frame and model layer frame
+                    // to unlock scroll view properly at finishAnimation(at:)
+                    if abs(mView.frame.minY - layoutAdapter.topY) <= 1.0 {
+                        mView.frame.origin.y = layoutAdapter.topY
+                    }
+                    animator.finishAnimation(at: .current)
+                } else {
+                    self.animator = nil
+                }
+            }
+
+            if panGesture.state == .began {
+                panningBegan(at: location)
+                return
+            }
+
+            if shouldScrollViewHandleTouch(scrollView, point: location, velocity: velocity) {
+                return
+            }
+
+            switch panGesture.state {
+                case .changed:
+                    if interactionInProgress == false {
+                        startInteraction(with: translation, at: location, interactionView: middleView)
+                    }
+                    panningChange(with: translation, panningView: middleView,velocity: velocity)
+                case .ended, .cancelled, .failed:
+                    if interactionInProgress == false {
+                        startInteraction(with: translation, at: location, interactionView: middleView)
+                        // Workaround: Prevent stopping the surface view b/w anchors if the pan gesture
+                        // doesn't pass through .changed state after an interruptible animator is interrupted.
+                        let dy = translation.y - .leastNonzeroMagnitude
+                        layoutAdapter.updateInteractiveTopConstraint(diff: dy,
+                                                                     allowsTopBuffer: true,
+                                                                     with: behavior,
+                                                                     interactive: middleView)
+                    }
+                    panningEnd(with: translation, velocity: velocity)
+                default:
+                break
+        }
         default:
             return
         }
@@ -487,24 +561,30 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
-    private func panningChange(with translation: CGPoint) {
+    private func panningChange(with translation: CGPoint,panningView:UIView? = nil, velocity: CGPoint = CGPoint(x: 0, y: 0)) {
         log.debug("panningChange -- translation = \(translation.y)")
-        let preY = surfaceView.frame.minY
+        var panView: UIView = surfaceView
+        if let pView = panningView{
+            panView = pView
+        }
+        let preY = panView.frame.minY
         let dy = translation.y - initialTranslationY
 
         layoutAdapter.updateInteractiveTopConstraint(diff: dy,
                                                      allowsTopBuffer: allowsTopBuffer(for: dy),
-                                                     with: behavior)
+                                                     with: behavior,
+                                                     interactive: panningView)
 
-        let currentY = surfaceView.frame.minY
+        let currentY = panView.frame.minY
         backdropView.alpha = getBackdropAlpha(at: currentY, with: translation)
         preserveContentVCLayoutIfNeeded()
-
+        let targetPosition = self.targetPosition(from: currentY, with: velocity)
+        
         let didMove = (preY != currentY)
         guard didMove else { return }
 
         if let vc = viewcontroller {
-            vc.delegate?.floatingPanelDidMove(vc)
+            vc.delegate?.floatingPanelDidMove(vc,movingPosition:targetPosition)
         }
     }
 
@@ -668,14 +748,17 @@ class FloatingPanelCore: NSObject, UIGestureRecognizerDelegate {
         }
     }
 
-    private func startInteraction(with translation: CGPoint, at location: CGPoint) {
+    private func startInteraction(with translation: CGPoint, at location: CGPoint, interactionView:UIView? = nil) {
         /* Don't lock a scroll view to show a scroll indicator after hitting the top */
         log.debug("startInteraction  -- translation = \(translation.y), location = \(location.y)")
         guard interactionInProgress == false else { return }
 
         var offset: CGPoint = .zero
-
         initialFrame = surfaceView.frame
+        if let interactionView = interactionView{
+            initialFrame = interactionView.frame
+        }
+        
         if state == layoutAdapter.topMostState, let scrollView = scrollView {
             if grabberAreaFrame.contains(location) {
                 initialScrollOffset = scrollView.contentOffset
